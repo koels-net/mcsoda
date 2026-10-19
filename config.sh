@@ -35,11 +35,13 @@ ARCHS="x86_64"
 
 # Oldest macOS the built runner must load on. 15.4 because ntdll uses
 # strchrnul, introduced there, and because Blockintosh's release.json already
-# requires 15.4 for the GPTK 3 renderer. Without an explicit deployment target clang
-# defaults to the build machine's OS, so configure detects libSystem symbols
-# that only newer systems export (pipe2 and dup3 are macOS 27.0+). The runner
-# then links them, loads on the build machine, and fails at dlopen on anything
-# older with "Symbol not found: _pipe2".
+# requires 15.4 for the GPTK 3 renderer (launcher floor is 15.0; gameplay with
+# GPTK 3 is 15.4). Applied to Wine (3-build.sh) and every compiled dependency
+# (0-bootstrap.sh). Without an explicit deployment target clang defaults to the
+# build machine's OS, so configure detects libSystem symbols that only newer
+# systems export (pipe2 and dup3 are macOS 27.0+). The runner then links them,
+# loads on the build machine, and fails at dlopen on anything older with
+# "Symbol not found: _pipe2".
 MACOS_MIN="15.4"
 
 # Build *tools* (bison, flex, mingw-w64, pkgconf) are architecture-irrelevant:

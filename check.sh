@@ -41,6 +41,20 @@ need_dylib SDL2 libSDL2.dylib
 need_dylib gnutls libgnutls.dylib
 need_dylib MoltenVK libMoltenVK.dylib
 
+# Compiled deps must target MACOS_MIN; MoltenVK is a prebuilt (minos 12.0).
+version_gt() {
+  printf '%s\n%s\n' "$1" "$2" | sort -V | head -1 | grep -qx "$2" && [[ "$1" != "$2" ]]
+}
+for f in "$DEPS"/lib/*.dylib; do
+  [[ -f "$f" ]] || continue
+  base=$(basename "$f")
+  [[ "$base" == libMoltenVK.dylib ]] && continue
+  minos=$(otool -l "$f" 2>/dev/null | awk '/minos/{print $2; exit}')
+  if [[ -z "$minos" ]]; then bad "$base: no minos (rebuild ./0-bootstrap.sh)"
+  elif version_gt "$minos" "$MACOS_MIN"; then bad "$base: minos $minos > MACOS_MIN $MACOS_MIN (rebuild ./0-bootstrap.sh)"
+  else ok "$base minos $minos (<= $MACOS_MIN)"; fi
+done
+
 for label_url_out in \
   "wine-mono $WINE_MONO_VERSION|$WORK/deps-src/wine-mono-${WINE_MONO_VERSION}-x86.tar.xz" \
   "wine-gecko $WINE_GECKO_VERSION|$WORK/deps-src/wine-gecko-${WINE_GECKO_VERSION}-x86_64.tar.xz" \

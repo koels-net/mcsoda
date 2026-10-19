@@ -16,13 +16,28 @@ set -euo pipefail
 echo ">> installing build tools (arm64)"
 "$BREW" install bison flex mingw-w64 pkgconf cmake ninja autoconf automake meson
 
+# Same floor as Wine: without an explicit deployment target clang defaults to
+# the build machine's OS, so dependency dylibs record minos 27.0 and can link
+# symbols older systems do not export. -Werror=unguarded-availability-new turns
+# that into a build failure here instead of a dlopen failure on a user's Mac.
+export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+export CC="clang -arch x86_64 -Werror=unguarded-availability-new"
+export CXX="clang++ -arch x86_64 -Werror=unguarded-availability-new"
+
+# Rebuild when MACOS_MIN changes: the early-return checks below only look for
+# the dylib name, so a prior 27.0 build would otherwise be kept forever.
+DEPS_STAMP="$DEPS/.macos_min"
+if [[ ! -f "$DEPS_STAMP" ]] || [[ "$(cat "$DEPS_STAMP")" != "$MACOS_MIN" ]]; then
+  echo ">> clearing $DEPS for MACOS_MIN=$MACOS_MIN"
+  rm -rf "$DEPS"
+fi
+
 # lib/pkgconfig must exist before the zlib.pc stub below, which is written
 # before the first dependency build would have created it.
 mkdir -p "$DEPS/lib/pkgconfig" "$DEPS/include" "$WORK/deps-src"
+echo "$MACOS_MIN" > "$DEPS_STAMP"
 NPROC="$(sysctl -n hw.ncpu)"
 export PATH="$BREW_PREFIX/bin:$PATH"
-export CC="clang -arch x86_64"
-export CXX="clang++ -arch x86_64"
 export CPPFLAGS="-I$DEPS/include"
 export LDFLAGS="-L$DEPS/lib"
 export PKG_CONFIG_PATH="$DEPS/lib/pkgconfig"
@@ -57,7 +72,7 @@ build_sdl2() {
   rm -rf "$d/SDL2-$v"
   tar -C "$d" -xzf "$d/SDL2-$v.tar.gz"
   cd "$d/SDL2-$v"
-  MACOSX_DEPLOYMENT_TARGET=14.0 ./configure --prefix="$DEPS" --host=x86_64-apple-darwin --build=x86_64-apple-darwin \
+  ./configure --prefix="$DEPS" --host=x86_64-apple-darwin --build=x86_64-apple-darwin \
     --disable-video-x11 --disable-video-wayland --enable-shared
   make -j"$NPROC" && make install
 }
@@ -176,6 +191,31 @@ build_nettle
 build_gnutls
 install_moltenvk
 
+# MoltenVK is a prebuilt universal binary (minos 12.0); everything we compile
+# must genuinely target MACOS_MIN. Fail here rather than ship a 27.0 dylib.
+minos_of() { otool -l "$1" 2>/dev/null | awk '/minos/{print $2; exit}'; }
+version_gt() {
+  # True if $1 > $2 (dotted numeric).
+  printf '%s\n%s\n' "$1" "$2" | sort -V | head -1 | grep -qx "$2" && [[ "$1" != "$2" ]]
+}
+echo ">> verifying dependency minos <= $MACOS_MIN"
+fail_minos=0
+for f in "$DEPS"/lib/*.dylib; do
+  [[ -f "$f" ]] || continue
+  base=$(basename "$f")
+  [[ "$base" == libMoltenVK.dylib ]] && continue
+  minos=$(minos_of "$f")
+  if [[ -z "$minos" ]]; then
+    echo "  FAIL  $base: no minos"; fail_minos=1; continue
+  fi
+  if version_gt "$minos" "$MACOS_MIN"; then
+    echo "  FAIL  $base: minos $minos > $MACOS_MIN"; fail_minos=1
+  else
+    echo "  ok    $base minos $minos"
+  fi
+done
+(( fail_minos )) && { echo "dependency deployment target check failed"; exit 1; }
+
 echo
-echo ">> done. x86_64 deps in $DEPS"
+echo ">> done. x86_64 deps in $DEPS (MACOS_MIN=$MACOS_MIN)"
 echo ">> run ./check.sh"
