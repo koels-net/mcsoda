@@ -18,3 +18,5 @@ work.nosync/
 # symlink to work.nosync
 /work
 /work.nosync/
+
+dist-release/

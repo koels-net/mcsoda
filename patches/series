@@ -6,3 +6,4 @@
 0005-winemac-d3dmetal-macdrv-functions.patch
 0006-macos-keep-pthread-gsbase-for-gptk.patch
 0007-server-relative-raw-mouse-for-macdrv.patch
+0008-winemac-nsevent-delta-rawinput.patch
