@@ -51,7 +51,7 @@ D3DMetal calls back into. Ported from gamesir-labs/wine (GameHub).
      *pwm = wm;
 --- a/dlls/ntdll/unix/unix_private.h	2026-10-18 20:02:18
 +++ b/dlls/ntdll/unix/unix_private.h	2026-10-18 20:02:19
-@@ -723,5 +723,37 @@
+@@ -723,5 +723,56 @@
  }
  
  #endif  /* defined(__i386__) || defined(__x86_64__) */

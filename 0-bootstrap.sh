@@ -16,7 +16,9 @@ set -euo pipefail
 echo ">> installing build tools (arm64)"
 "$BREW" install bison flex mingw-w64 pkgconf cmake ninja autoconf automake meson
 
-mkdir -p "$DEPS" "$WORK/deps-src"
+# lib/pkgconfig must exist before the zlib.pc stub below, which is written
+# before the first dependency build would have created it.
+mkdir -p "$DEPS/lib/pkgconfig" "$DEPS/include" "$WORK/deps-src"
 NPROC="$(sysctl -n hw.ncpu)"
 export PATH="$BREW_PREFIX/bin:$PATH"
 export CC="clang -arch x86_64"

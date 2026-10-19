@@ -50,6 +50,11 @@ mkdir -p "$BUILD" && cd "$BUILD"
 # configure guesses the target from uname, which says arm64 even when CC is
 # building x86_64, so the triplet has to be stated. build == host keeps this a
 # native build rather than a cross-compile: Rosetta runs the test binaries.
+# configure's AC_CHECK_FUNCS declares its own prototypes, so the SDK
+# availability annotations do not apply and these probe as present on a newer
+# build machine. State them explicitly so Wine takes its portable fallbacks.
+ac_cv_func_pipe2=no \
+ac_cv_func_dup3=no \
 "$SRC/configure" \
   --build=x86_64-apple-darwin \
   --host=x86_64-apple-darwin \

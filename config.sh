@@ -33,13 +33,14 @@ PREFIX="/usr/local/opt/mcsoda"
 # 32-bit Windows applications will not run. This is a hard limit, not a TODO.
 ARCHS="x86_64"
 
-# Oldest macOS the built runner must load on, matching Blockintosh's
-# release.json minimumMacOS. Without an explicit deployment target clang
+# Oldest macOS the built runner must load on. 15.4 because ntdll uses
+# strchrnul, introduced there, and because Blockintosh's release.json already
+# requires 15.4 for the GPTK 3 renderer. Without an explicit deployment target clang
 # defaults to the build machine's OS, so configure detects libSystem symbols
 # that only newer systems export (pipe2 and dup3 are macOS 27.0+). The runner
 # then links them, loads on the build machine, and fails at dlopen on anything
 # older with "Symbol not found: _pipe2".
-MACOS_MIN="15.0"
+MACOS_MIN="15.4"
 
 # Build *tools* (bison, flex, mingw-w64, pkgconf) are architecture-irrelevant:
 # they only have to emit correct output, so the native arm64 Homebrew is
