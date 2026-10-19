@@ -25,8 +25,14 @@ fi
 # configure bake absolute paths in, so `make` works outside this script too.
 export BISON="$BREW_PREFIX/opt/bison/bin/bison"
 export FLEX="$BREW_PREFIX/opt/flex/bin/flex"
-export CC="clang -arch x86_64"
-export CXX="clang++ -arch x86_64"
+# The deployment target makes clang refuse APIs newer than MACOS_MIN, so
+# configure's probes do not enable them. -Werror=unguarded-availability-new
+# turns any remaining newer-than-target call into a build error here instead
+# of a dlopen failure on a user's Mac. Both flags ride on CC/CXX so that
+# configure keeps its own default CFLAGS.
+export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+export CC="clang -arch x86_64 -Werror=unguarded-availability-new"
+export CXX="clang++ -arch x86_64 -Werror=unguarded-availability-new"
 export CPPFLAGS="-I$DEPS/include"
 export LDFLAGS="-L$DEPS/lib"
 
