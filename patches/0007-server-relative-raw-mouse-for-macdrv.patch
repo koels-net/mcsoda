@@ -1,0 +1,15 @@
+diff --git a/server/queue.c b/server/queue.c
+index 391c473..e021e95 100644
+--- a/server/queue.c
++++ b/server/queue.c
+@@ -2309,8 +2309,8 @@ static int queue_mouse_message( struct desktop *desktop, user_handle_t win, cons
+         raw_msg.source     = source;
+         raw_msg.time       = time;
+         raw_msg.message    = WM_INPUT;
+-        raw_msg.flags      = flags;
+-        rawmouse_init( &raw_msg.rawinput, &raw_msg.data.mouse, input->mouse.x, input->mouse.y,
++        raw_msg.flags      = flags & ~(MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK);
++        rawmouse_init( &raw_msg.rawinput, &raw_msg.data.mouse, x - desktop_shm->cursor.x, y - desktop_shm->cursor.y,
+                        raw_msg.flags, input->mouse.data, input->mouse.info );
+ 
+         dispatch_rawinput_message( desktop, &raw_msg );

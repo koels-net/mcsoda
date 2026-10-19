@@ -1,0 +1,20 @@
+# Build trees (multi‑GB; rebuild with 0–4 scripts)
+work/
+work.nosync/
+
+# Local env / secrets
+.env
+.env.*
+*.pem
+*.p12
+
+# Editor / OS junk
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# symlink to work.nosync
+/work
+/work.nosync/

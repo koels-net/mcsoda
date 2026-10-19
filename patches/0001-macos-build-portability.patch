@@ -1,0 +1,309 @@
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index 665a832..ae50025 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -38,7 +38,9 @@
+ #include <sys/mman.h>
+ #include <sys/wait.h>
+ #include <unistd.h>
++#ifdef __GLIBC__
+ #include <malloc.h>
++#endif
+ #include <dlfcn.h>
+ #ifdef HAVE_PWD_H
+ # include <pwd.h>
+@@ -2411,7 +2413,9 @@ static void start_main_thread(void)
+     set_thread_teb( teb );
+ #endif
+ 
++#ifdef __GLIBC__
+     mallopt( M_PERTURB, 0xff );
++#endif
+     init_startup_info();
+     *(ULONG_PTR *)&peb->CloudFileFlags = get_image_address();
+     set_load_order_app_name( main_wargv[0] );
+@@ -2420,7 +2424,9 @@ static void start_main_thread(void)
+     load_ntdll();
+     load_wow64_ntdll( main_image_info.Machine );
+     load_apiset_dll();
++#ifdef __GLIBC__
+     mallopt( M_PERTURB, 0 );
++#endif
+     server_init_process_done();
+ }
+ 
+diff --git a/dlls/ntdll/unix/sync.c b/dlls/ntdll/unix/sync.c
+index 67ab945..6f2c89c 100644
+--- a/dlls/ntdll/unix/sync.c
++++ b/dlls/ntdll/unix/sync.c
+@@ -61,7 +61,9 @@
+ # include <sys/event.h>
+ #endif
+ 
++#ifdef __linux__
+ # include "ntsync_tmp.h"
++#endif
+ 
+ #include "ntstatus.h"
+ #define WIN32_NO_STATUS
+diff --git a/server/inproc_sync.c b/server/inproc_sync.c
+index a7020ef..0bfe3cc 100644
+--- a/server/inproc_sync.c
++++ b/server/inproc_sync.c
+@@ -36,7 +36,9 @@
+ 
+ #include "fsync.h"
+ 
++#ifdef __linux__
+ #include "ntsync_tmp.h"
++#endif
+ 
+ #ifdef NTSYNC_IOC_EVENT_READ
+ 
+diff --git a/dlls/amd_ags_x64/unixlib.c b/dlls/amd_ags_x64/unixlib.c
+index d34a162..6f67c21 100644
+--- a/dlls/amd_ags_x64/unixlib.c
++++ b/dlls/amd_ags_x64/unixlib.c
+@@ -31,9 +31,11 @@
+ #include <fcntl.h>
+ #include <errno.h>
+ 
++#ifdef HAVE_XF86DRM_H
+ #include <xf86drm.h>
+ #include <amdgpu_drm.h>
+ #include <amdgpu.h>
++#endif
+ 
+ #include "ntstatus.h"
+ #define WIN32_NO_STATUS
+@@ -46,6 +48,8 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(amd_ags);
+ 
++#ifdef HAVE_XF86DRM_H
++
+ #define MAX_DEVICE_COUNT 64
+ 
+ static unsigned int device_count;
+@@ -281,3 +285,20 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
+     init,
+     get_device_info,
+ };
++
++#else  /* HAVE_XF86DRM_H */
++
++/* libdrm is Linux-only. Without it there is no AMD GPU to query, so the
++ * entry points exist but report that the extension is unavailable. */
++static NTSTATUS amd_ags_not_supported( void *args )
++{
++    return STATUS_NOT_SUPPORTED;
++}
++
++const unixlib_entry_t __wine_unix_call_funcs[] =
++{
++    amd_ags_not_supported,
++    amd_ags_not_supported,
++};
++
++#endif  /* HAVE_XF86DRM_H */
+diff --git a/dlls/ntdll/unix/fsync.c b/dlls/ntdll/unix/fsync.c
+index 25d41ca..582424a 100644
+--- a/dlls/ntdll/unix/fsync.c
++++ b/dlls/ntdll/unix/fsync.c
+@@ -149,7 +149,12 @@ static inline int futex_wait_multiple( const struct futex_waitv *futexes,
+ 
+ static inline int futex_wake( int *addr, int val )
+ {
++#ifdef __linux__
+     return syscall( __NR_futex, addr, 1, val, NULL, 0, 0 );
++#else
++    errno = ENOSYS;
++    return -1;
++#endif
+ }
+ 
+ struct fsync
+@@ -456,12 +461,17 @@ void fsync_init( DWORD pid )
+ 
+ 
+     fsync_enabled = 1;
++#ifdef __linux__
+     syscall( __NR_futex_waitv, NULL, 0, 0, NULL, 0 );
+     if (errno == ENOSYS || errno == EPERM)
+     {
+         ERR("Server is running with WINEFSYNC but this process can't use __NR_futex_waitv.\n");
+         exit(1);
+     }
++#else
++    ERR("fsync is not available on this platform; use WINEMSYNC instead.\n");
++    exit(1);
++#endif
+ 
+     if (stat( config_dir, &st ) == -1)
+         ERR("Cannot stat %s\n", config_dir);
+diff --git a/server/fsync.c b/server/fsync.c
+index 7d3ec64..362c406 100644
+--- a/server/fsync.c
++++ b/server/fsync.c
+@@ -310,7 +310,12 @@ int fsync_grab_shm_idx( unsigned int shm_idx )
+ 
+ static inline int futex_wake( int *addr, int val )
+ {
++#ifdef __linux__
+     return syscall( __NR_futex, addr, 1, val, NULL, 0, 0 );
++#else
++    errno = ENOSYS;
++    return -1;
++#endif
+ }
+ 
+ /* shm layout for events or event-like objects. */
+diff --git a/dlls/ntdll/unix/signal_x86_64.c b/dlls/ntdll/unix/signal_x86_64.c
+index f1da0de..150f405 100644
+--- a/dlls/ntdll/unix/signal_x86_64.c
++++ b/dlls/ntdll/unix/signal_x86_64.c
+@@ -3207,7 +3207,17 @@ void signal_init_process(void)
+ 
+ void set_thread_teb( TEB *teb )
+ {
++#ifdef __linux__
+     arch_prctl( ARCH_SET_GS, teb );
++#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
++    amd64_set_gsbase( teb );
++#elif defined(__NetBSD__)
++    sysarch( X86_64_SET_GSBASE, &teb );
++#elif defined(__APPLE__)
++    /* leave_handler() will set GSBASE to the TEB */
++#else
++# error Please define setting %gs for your architecture
++#endif
+ }
+ 
+ /***********************************************************************
+diff --git a/dlls/win32u/opengl.c b/dlls/win32u/opengl.c
+index c7aeea1..4a66e76 100644
+--- a/dlls/win32u/opengl.c
++++ b/dlls/win32u/opengl.c
+@@ -1610,6 +1610,39 @@ static void init_egl_platforms( struct opengl_funcs *funcs, const struct opengl_
+ {
+ }
+ 
++/* The framebuffer-surface helpers below are defined inside the SONAME_LIBEGL
++ * block above but used by code outside it, so a build without EGL - any macOS
++ * build - does not link. These stubs resolve those uses to "no framebuffer
++ * surface": framebuffer_surface_funcs never matches a real drawable's funcs
++ * pointer, so every branch guarded by that comparison is dead. */
++struct framebuffer_surface
++{
++    struct opengl_drawable base;
++    struct opengl_drawable *target;
++    LONG last_gamma_serial;
++    GLenum internalformat;
++    int width, height;
++    LONG64 serial;
++};
++
++static struct framebuffer_surface *framebuffer_from_opengl_drawable( struct opengl_drawable *base )
++{
++    return CONTAINING_RECORD( base, struct framebuffer_surface, base );
++}
++
++static const struct opengl_drawable_funcs framebuffer_surface_funcs = {0};
++
++static struct opengl_drawable *framebuffer_surface_create( int format, struct client_surface *client,
++                                                           struct opengl_drawable *target )
++{
++    return NULL;
++}
++
++static BOOL needs_framebuffer_surface( HWND hwnd )
++{
++    return FALSE;
++}
++
+ #endif /* SONAME_LIBEGL */
+ 
+ static UINT read_drm_device_prop( const char *name, const char *prop )
+diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
+index b397641..f229c63 100644
+--- a/dlls/win32u/vulkan.c
++++ b/dlls/win32u/vulkan.c
+@@ -642,6 +642,16 @@ signal_op_complete:
+     return add_sem_wait( wait_info, wait_alloc_count, sem->shared_sem, global_sem_wait_value );
+ }
+ 
++#ifdef __APPLE__
++/* gettid() is Linux-only. The value is used for debug output only. */
++static int gettid(void)
++{
++    uint64_t tid = 0;
++    pthread_threadid_np( NULL, &tid );
++    return (int)tid;
++}
++#endif
++
+ #define SIGNALLER_INITIAL_WAIT_COUNT 256
+ 
+ static void *signaller_worker( void *arg )
+diff --git a/dlls/winegstreamer/media-converter/media-converter.h b/dlls/winegstreamer/media-converter/media-converter.h
+index 3dd8864..c401fd5 100644
+--- a/dlls/winegstreamer/media-converter/media-converter.h
++++ b/dlls/winegstreamer/media-converter/media-converter.h
+@@ -29,6 +29,7 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <sys/stat.h>
++#include <pthread.h>
+ 
+ #include "unix_private.h"
+ #include "wine/rbtree.h"
+diff --git a/loader64/Makefile.in b/loader64/Makefile.in
+index cfbe51d..7e92e10 100644
+--- a/loader64/Makefile.in
++++ b/loader64/Makefile.in
+@@ -3,10 +3,15 @@ PARENTSRC = ../loader
+ SOURCES = \
+ 	main.c \
+ 	preloader.c \
+-	preloader_mac.c
++	preloader_mac.c \
++	wine_info.plist.in
+ 
+-PROGRAMS = wine64 wine64-preloader
+-INSTALL_LIB = wine64 wine64-preloader
++# No preloader on macOS: configure sets WINELOADER_PROGRAMS to just "wine"
++# for this platform, and preloader_mac.c calls __dyld_func_lookup, which
++# modern macOS no longer provides. loader/Makefile.in honours that variable;
++# this file hardcoded the preloader instead.
++PROGRAMS = wine64
++INSTALL_LIB = wine64
+ UNIX_CFLAGS = -fPIE
+ 
+ preloader_EXTRADEFS = -fno-builtin
+@@ -15,6 +20,6 @@ wine64_OBJS = main.o
+ wine64_DEPS = $(WINELOADER_DEPENDS)
+ wine64_LDFLAGS = $(WINELOADER_LDFLAGS) $(LDEXECFLAGS) $(PTHREAD_LIBS)
+ 
+-wine64_preloader_OBJS = preloader.o
++wine64_preloader_OBJS = preloader.o preloader_mac.o
+ wine64_preloader_DEPS = $(WINELOADER_DEPENDS)
+ wine64_preloader_LDFLAGS = $(WINEPRELOADER_LDFLAGS)
+diff --git a/dlls/ntdll/unix/system.c b/dlls/ntdll/unix/system.c
+index 3a21539..0ce534a 100644
+--- a/dlls/ntdll/unix/system.c
++++ b/dlls/ntdll/unix/system.c
+@@ -843,6 +843,14 @@ void init_shared_data_cpuinfo( KUSER_SHARED_DATA *data )
+ static void fill_performance_core_info(void);
+ static BOOL sysfs_parse_bitmap(const char *filename, ULONG_PTR *mask);
+ 
++#ifndef linux
++/* Both read /sys/devices/system/cpu, so the real versions live in the
++ * #ifdef linux block below. The CPU-topology override they serve is
++ * Linux-only; these stubs report no performance cores, so it declines. */
++static void fill_performance_core_info(void) { }
++static BOOL sysfs_parse_bitmap(const char *filename, ULONG_PTR *mask) { return FALSE; }
++#endif
++
+ static ULONG popcount( ULONG val )
+ {
+ #if defined(__MINGW32__)

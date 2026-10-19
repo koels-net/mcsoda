@@ -1,0 +1,8 @@
+# Applied in order by 2-patch.sh.
+0001-macos-build-portability.patch
+0002-msync-from-crossover-11.0.patch
+0003-gptk-non-native-code-regions.patch
+0004-winedllpath-prepend.patch
+0005-winemac-d3dmetal-macdrv-functions.patch
+0006-macos-keep-pthread-gsbase-for-gptk.patch
+0007-server-relative-raw-mouse-for-macdrv.patch

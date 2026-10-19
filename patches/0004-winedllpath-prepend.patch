@@ -1,0 +1,71 @@
+From: mcsoda <mcsoda@local>
+Date: Sun, 19 Oct 2026 01:10:00 +0000
+Subject: [PATCH] ntdll: honor WINEDLLPATH_PREPEND before the runtime tree
+
+Blockintosh and GameHub load Apple GPTK forwarders from an external wine/
+directory while the McSoda runtime ships DXMT as built-in d3d11/dxgi. Builtin
+lookup must search WINEDLLPATH_PREPEND and WINEDLLPATH before the install
+tree, matching gamesir-labs/wine.
+
+---
+ dlls/ntdll/unix/loader.c | 24 +++++++++++++++++++-----
+ 1 file changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index 1111111..2222222 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -299,28 +299,42 @@ static WORD get_alt_machine( WORD machine )
+     }
+ }
+ 
++static void append_colon_paths( const char **dll_paths, int *count, const char *path )
++{
++    char *p, *copy;
++
++    if (!path || !*path) return;
++    copy = strdup( path );
++    for (p = strtok( copy, ":" ); p; p = strtok( NULL, ":" )) dll_paths[(*count)++] = strdup( p );
++    free( copy );
++}
++
+ static void set_dll_path(void)
+ {
+-    char *p, *path = getenv( "WINEDLLPATH" ), *be_runtime = getenv( "PROTON_BATTLEYE_RUNTIME" ), *eac_runtime = getenv( "PROTON_EAC_RUNTIME" );
++    char *p, *path = getenv( "WINEDLLPATH" ), *prepend = getenv( "WINEDLLPATH_PREPEND" );
++    char *be_runtime = getenv( "PROTON_BATTLEYE_RUNTIME" ), *eac_runtime = getenv( "PROTON_EAC_RUNTIME" );
+     int i, count = 0;
+ 
+-    if (path) for (p = path, count = 1; *p; p++) if (*p == ':') count++;
++    if (prepend) for (p = prepend, count = 1; *p; p++) if (*p == ':') count++;
++    if (path)
++    {
++        int n = 1;
++        for (p = path; *p; p++) if (*p == ':') n++;
++        count += n;
++    }
+ 
+     if (be_runtime)
+         count += 2;
+ 
+     if (eac_runtime)
+         count += 2;
+ 
+     dll_paths = malloc( (count + 2) * sizeof(*dll_paths) );
+     count = 0;
+ 
+-    if (!build_dir) dll_paths[count++] = dll_dir;
+-
+-    if (path)
+-    {
+-        path = strdup(path);
+-        for (p = strtok( path, ":" ); p; p = strtok( NULL, ":" )) dll_paths[count++] = strdup( p );
+-        free( path );
+-    }
++    append_colon_paths( dll_paths, &count, prepend );
++    append_colon_paths( dll_paths, &count, path );
++
++    if (!build_dir) dll_paths[count++] = dll_dir;
+ 
+     if (be_runtime)
+     {
