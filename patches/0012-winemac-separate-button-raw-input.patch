@@ -1,0 +1,60 @@
+--- a/dlls/winemac.drv/mouse.c
++++ b/dlls/winemac.drv/mouse.c
+@@ -162,6 +162,25 @@
+ }
+ 
+ 
++/* Button/wheel locations are cooked cursor positions, not raw motion. A
++ * clipped or warped cursor can differ from the server position even without
++ * physical movement. Keep those coordinates out of the raw-input stream. */
++static void send_mouse_button_input(HWND hwnd, const macdrv_event *event, UINT flags,
++                                    int x, int y, DWORD data, unsigned long time)
++{
++    INPUT raw = {0};
++
++    send_mouse_input(hwnd, event->window, flags | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE,
++                     x, y, data, FALSE, time, SEND_HWMSG_NO_RAW);
++
++    raw.type = INPUT_MOUSE;
++    raw.mi.dwFlags = flags;
++    raw.mi.mouseData = data;
++    raw.mi.time = time;
++    NtUserSendHardwareInput(0, SEND_HWMSG_NO_MSG, &raw, 0);
++}
++
++
+ /***********************************************************************
+  *              copy_system_cursor_name
+  */
+@@ -890,9 +909,8 @@
+         }
+     }
+ 
+-    send_mouse_input(hwnd, event->window, flags | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE,
+-                     event->mouse_button.x, event->mouse_button.y,
+-                     data, FALSE, event->mouse_button.time_ms, 0);
++    send_mouse_button_input(hwnd, event, flags, event->mouse_button.x, event->mouse_button.y,
++                            data, event->mouse_button.time_ms);
+ }
+ 
+ 
+@@ -946,13 +964,13 @@
+           event->mouse_scroll.time_ms, (NtGetTickCount() - event->mouse_scroll.time_ms));
+ 
+     if (event->mouse_scroll.y_scroll)
+-        send_mouse_input(hwnd, event->window, MOUSEEVENTF_WHEEL | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE,
+-                         event->mouse_scroll.x, event->mouse_scroll.y,
+-                         event->mouse_scroll.y_scroll, FALSE, event->mouse_scroll.time_ms, 0);
++        send_mouse_button_input(hwnd, event, MOUSEEVENTF_WHEEL,
++                                event->mouse_scroll.x, event->mouse_scroll.y,
++                                event->mouse_scroll.y_scroll, event->mouse_scroll.time_ms);
+     if (event->mouse_scroll.x_scroll)
+-        send_mouse_input(hwnd, event->window, MOUSEEVENTF_HWHEEL | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE,
+-                         event->mouse_scroll.x, event->mouse_scroll.y,
+-                         event->mouse_scroll.x_scroll, FALSE, event->mouse_scroll.time_ms, 0);
++        send_mouse_button_input(hwnd, event, MOUSEEVENTF_HWHEEL,
++                                event->mouse_scroll.x, event->mouse_scroll.y,
++                                event->mouse_scroll.x_scroll, event->mouse_scroll.time_ms);
+ }
+ 
+ 

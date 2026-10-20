@@ -244,3 +244,21 @@ Window → Exit Full Screen action, and a simulated game fullscreen on/off cycle
 The Blockintosh owner subsequently confirmed the fullscreen and icon fixes in
 build 44. These changes do not establish a cause for the separately reported
 7 GB memory spike or complete all Wine fullscreen/platform conformance testing.
+
+
+## Raw button/wheel separation (0012)
+
+`0012-winemac-separate-button-raw-input.patch` keeps cooked cursor positions
+out of raw button and wheel packets. Clipping/warping can leave the server
+cursor different from the button event's absolute location; deriving relative
+raw movement from that difference injects unintended motion on clicks/scrolls.
+The patch sends the original cooked event without raw input, followed by a
+raw-only button/wheel event with zero displacement. NSEvent raw motion is
+unchanged, as are global coordinates and Retina conversions.
+
+The source-derived Blockintosh input probe passes 10,217 checks on arm64 and
+x86_64; its original-code control fails 10,078 checks. The full x86_64 driver
+builds with minos 15.4. This is included in the local Blockintosh build 45/fs4
+candidate. Rapid-click Minecraft gameplay and the separately reported visible
+pointer/menu alignment issue still require tester verification. No public
+runtime release has been published for this patch.

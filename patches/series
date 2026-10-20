@@ -10,3 +10,4 @@
 0009-winemac-fullscreen-mask-local-coordinates.patch
 0010-winemac-fullscreen-controls-and-menu-bar.patch
 0011-winemac-preserve-native-game-host-icon.patch
+0012-winemac-separate-button-raw-input.patch
