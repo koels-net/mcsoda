@@ -1,0 +1,246 @@
+--- a/dlls/winemac.drv/cocoa_window.m
++++ b/dlls/winemac.drv/cocoa_window.m
+@@ -1148,13 +1148,30 @@
+             [self setMovable:[self allowsMovingWithMaximized:maximized]];
+     }
+ 
++    - (BOOL) isInNativeFullScreen
++    {
++        return enteringFullScreen || exitingFullScreen || ([self styleMask] & NSWindowStyleMaskFullScreen);
++    }
++
++    - (void) restoreDeferredWindowStyle
++    {
++        if (!hasDeferredWindowStyle) return;
++        hasDeferredWindowStyle = FALSE;
++        [self setStyleMask:deferredWindowStyle & ~NSWindowStyleMaskFullScreen];
++        if ([[self contentView] acceptsFirstResponder])
++            [self makeFirstResponder:[self contentView]];
++        [self adjustFullScreenBehavior:[self collectionBehavior]];
++        [self adjustFeaturesForState];
++    }
++
+     - (void) adjustFullScreenBehavior:(NSWindowCollectionBehavior)behavior
+     {
+         NSUInteger style = [self styleMask];
+ 
+-        if (behavior & NSWindowCollectionBehaviorParticipatesInCycle &&
+-            style & NSWindowStyleMaskResizable && !(style & NSWindowStyleMaskUtilityWindow) && !maximized &&
+-            !(self.parentWindow || self.latentParentWindow))
++        if ([self isInNativeFullScreen] ||
++            (behavior & NSWindowCollectionBehaviorParticipatesInCycle &&
++             style & NSWindowStyleMaskResizable && !(style & NSWindowStyleMaskUtilityWindow) && !maximized &&
++             !(self.parentWindow || self.latentParentWindow)))
+         {
+             behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
+             behavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
+@@ -1183,6 +1200,16 @@
+         NSUInteger newStyle = style_mask_for_features(wf) | (currentStyle & ~usedStyles);
+ 
+         self.preventsAppActivation = wf->prevents_app_activation;
++
++        /* A game can replace WS_OVERLAPPEDWINDOW with WS_POPUP while AppKit
++         * owns fullscreen. Keep its exit controls until the native transition
++         * ends, then apply the latest Windows-requested decorations. */
++        if ([self isInNativeFullScreen])
++        {
++            deferredWindowStyle = newStyle;
++            hasDeferredWindowStyle = TRUE;
++            newStyle |= currentStyle & (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable);
++        }
+ 
+         if (newStyle != currentStyle)
+         {
+@@ -1254,13 +1281,11 @@
+ 
+             captured = (fullscreen || [self screen]) && [[WineApplicationController sharedController] areDisplaysCaptured];
+ 
+-            if (captured || fullscreen)
++            /* Non-captured fullscreen uses AppKit's reversible auto-hide
++             * presentation, not a window above the system menu bar. */
++            if (captured)
+             {
+-                if (captured)
+-                    level = CGShieldingWindowLevel() + 1; /* Need +1 or we don't get mouse moves */
+-                else
+-                    level = NSStatusWindowLevel + 1;
+-
++                level = CGShieldingWindowLevel() + 1; /* Need +1 or we don't get mouse moves */
+                 if (self.floating)
+                     level++;
+             }
+@@ -1910,7 +1935,7 @@
+     - (void) updateFullscreen
+     {
+         NSRect contentRect = [self contentRectForFrameRect:self.wine_fractionalFrame];
+-        BOOL nowFullscreen = !([self styleMask] & NSWindowStyleMaskFullScreen) && screen_covered_by_rect(contentRect, [NSScreen screens]);
++        BOOL nowFullscreen = ![self isInNativeFullScreen] && screen_covered_by_rect(contentRect, [NSScreen screens]);
+ 
+         if (nowFullscreen != fullscreen)
+         {
+@@ -2506,8 +2531,8 @@
+ 
+         if ([menuItem action] == @selector(makeKeyAndOrderFront:))
+             ret = [self isKeyWindow] || (!self.disabled && !self.noForeground);
+-        if ([menuItem action] == @selector(toggleFullScreen:) && (self.disabled || maximized))
+-            ret = NO;
++        if ([menuItem action] == @selector(toggleFullScreen:))
++            ret = !self.disabled && (([self styleMask] & NSWindowStyleMaskFullScreen) || !maximized);
+ 
+         return ret;
+     }
+@@ -2645,7 +2670,7 @@
+ 
+     - (void) toggleFullScreen:(id)sender
+     {
+-        if (!self.disabled && !maximized)
++        if (!self.disabled && (([self styleMask] & NSWindowStyleMaskFullScreen) || !maximized))
+             [super toggleFullScreen:sender];
+     }
+ 
+@@ -2913,6 +2938,15 @@
+     /*
+      * ---------- NSWindowDelegate methods ----------
+      */
++    - (NSApplicationPresentationOptions) window:(NSWindow*)window willUseFullScreenPresentationOptions:(NSApplicationPresentationOptions)options
++    {
++        /* Let AppKit reveal the title/exit controls together with the menu bar,
++         * instead of overlaying the menu bar on a separately revealed title. */
++        return (options & ~(NSApplicationPresentationHideMenuBar | NSApplicationPresentationHideDock)) |
++               NSApplicationPresentationFullScreen | NSApplicationPresentationAutoHideMenuBar |
++               NSApplicationPresentationAutoHideDock | NSApplicationPresentationAutoHideToolbar;
++    }
++
+     - (NSSize) window:(NSWindow*)window willUseFullScreenContentSize:(NSSize)proposedSize
+     {
+         macdrv_query* query;
+@@ -2997,6 +3031,8 @@
+     {
+         enteringFullScreen = FALSE;
+         enteredFullScreenTime = [[NSProcessInfo processInfo] systemUptime];
++        [self updateFullscreen];
++        [[WineApplicationController sharedController] adjustWindowLevels];
+         if (pendingOrderOut)
+             [self doOrderOut];
+     }
+@@ -3004,6 +3040,7 @@
+     - (void) windowDidExitFullScreen:(NSNotification*)notification
+     {
+         exitingFullScreen = FALSE;
++        [self restoreDeferredWindowStyle];
+         [self setFrameAndWineFrame:nonFullscreenFrame];
+         [self windowDidResize:nil];
+         if (pendingOrderOut)
+@@ -3014,6 +3051,9 @@
+     {
+         enteringFullScreen = FALSE;
+         enteredFullScreenTime = 0;
++        [self restoreDeferredWindowStyle];
++        [self updateFullscreen];
++        [[WineApplicationController sharedController] adjustWindowLevels];
+         if (pendingOrderOut)
+             [self doOrderOut];
+     }
+@@ -3140,8 +3180,10 @@
+ 
+     - (void) windowWillEnterFullScreen:(NSNotification*)notification
+     {
++        nonFullscreenFrame = self.wine_fractionalFrame;
+         enteringFullScreen = TRUE;
+-        nonFullscreenFrame = self.wine_fractionalFrame;
++        [self updateFullscreen];
++        [[WineApplicationController sharedController] adjustWindowLevels];
+     }
+ 
+     - (void) windowWillExitFullScreen:(NSNotification*)notification
+--- a/dlls/winemac.drv/cocoa_window.h
++++ b/dlls/winemac.drv/cocoa_window.h
+@@ -68,6 +68,8 @@
+ 
+     BOOL enteringFullScreen;
+     BOOL exitingFullScreen;
++    BOOL hasDeferredWindowStyle;
++    NSUInteger deferredWindowStyle;
+     NSRect nonFullscreenFrame;
+     NSTimeInterval enteredFullScreenTime;
+ 
+@@ -102,6 +104,7 @@
+ 
+     - (NSInteger) minimumLevelForActive:(BOOL)active;
+     - (void) updateFullscreen;
++    - (BOOL) isInNativeFullScreen;
+ 
+     - (void) postKeyEvent:(NSEvent *)theEvent;
+     - (void) postBroughtForwardEvent;
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -222,7 +222,9 @@
+ 
+     - (void) transformProcessToForeground:(BOOL)activateIfTransformed
+     {
+-        if ([NSApp activationPolicy] != NSApplicationActivationPolicyRegular)
++        /* A native app host is already Regular before Wine initializes.
++         * It still needs Wine's Window menu and fullscreen exit action. */
++        if ([NSApp activationPolicy] != NSApplicationActivationPolicyRegular || ![NSApp windowsMenu])
+         {
+             NSMenu* mainMenu;
+             NSMenu* submenu;
+@@ -701,6 +703,38 @@
+ 
+     - (void) updateFullscreenWindows
+     {
++        BOOL gameFullscreen = FALSE, nativeFullscreen = FALSE;
++        for (WineWindow* window in [NSApp windows])
++        {
++            if (![window isKindOfClass:[WineWindow class]] || ![window isVisible] ||
++                [window isMiniaturized] || ![window isOnActiveSpace]) continue;
++            nativeFullscreen |= [window isInNativeFullScreen];
++            gameFullscreen |= window.fullscreen;
++        }
++
++        /* Native fullscreen presentation may still be installed while AppKit
++         * delivers its exit notifications. Never save that transient policy as
++         * the windowed baseline for a subsequent in-game fullscreen toggle. */
++        if (!fullscreenPresentationActive && !([NSApp presentationOptions] & NSApplicationPresentationFullScreen))
++            savedFullscreenPresentationOptions = [NSApp presentationOptions];
++
++        BOOL usePresentation = [NSApp isActive] && !capture_displays_for_fullscreen &&
++                               gameFullscreen && !nativeFullscreen;
++        if (usePresentation && !fullscreenPresentationActive)
++        {
++            NSApplicationPresentationOptions options = savedFullscreenPresentationOptions &
++                ~(NSApplicationPresentationHideMenuBar | NSApplicationPresentationHideDock |
++                  NSApplicationPresentationFullScreen | NSApplicationPresentationAutoHideToolbar);
++            [NSApp setPresentationOptions:options | NSApplicationPresentationAutoHideMenuBar |
++                                                  NSApplicationPresentationAutoHideDock];
++            fullscreenPresentationActive = TRUE;
++        }
++        else if (!usePresentation && fullscreenPresentationActive)
++        {
++            [NSApp setPresentationOptions:savedFullscreenPresentationOptions];
++            fullscreenPresentationActive = FALSE;
++        }
++
+         if (capture_displays_for_fullscreen && [NSApp isActive])
+         {
+             BOOL anyFullscreen = FALSE;
+@@ -2227,6 +2261,8 @@
+         macdrv_release_event(event);
+ 
+         [self releaseMouseCapture];
++        [self updateFullscreenWindows];
++        [self adjustWindowLevels:NO];
+     }
+ 
+     - (void) applicationDidUnhide:(NSNotification*)aNotification
+--- a/dlls/winemac.drv/cocoa_app.h
++++ b/dlls/winemac.drv/cocoa_app.h
+@@ -73,6 +73,8 @@
+     NSMutableDictionary* originalDisplayModes;
+     NSMutableDictionary* latentDisplayModes;
+     BOOL displaysCapturedForFullscreen;
++    BOOL fullscreenPresentationActive;
++    NSApplicationPresentationOptions savedFullscreenPresentationOptions;
+ 
+     NSArray*    cursorFrames;
+     int         cursorFrame;

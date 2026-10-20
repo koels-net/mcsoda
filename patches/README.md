@@ -217,3 +217,30 @@ This patch uses CrossOver's (and GameHub's) model instead:
   macOS 27 and then narrows to a compatibility subset for older games. This
   whole build sits on top of it. See `../arm64ec-macos-feasibility.md` and
   `../mapjit-wine-probe.md` for what replacing it would take.
+
+## macOS fullscreen and native host fixes (0009–0011)
+
+- `0009-winemac-fullscreen-mask-local-coordinates.patch` converts the black-bar
+  mask from desktop coordinates to visible-window-local coordinates, then from
+  Wine pixels to Cocoa points. This prevents a monitor with a negative origin
+  from having nearly its entire fullscreen image covered by the mask. Monitor
+  positions, mouse coordinates and the native window frame are unchanged.
+- `0010-winemac-fullscreen-controls-and-menu-bar.patch` coordinates AppKit
+  menu/titlebar auto-hide, retains native fullscreen exit controls while Windows
+  reports maximized or borderless state, and defers decoration changes until
+  native exit or failed entry. Non-captured game fullscreen uses reversible
+  menu/Dock auto-hide rather than a window above the menu bar. It also installs
+  Wine's Window menu when a native host is already a Regular application.
+- `0011-winemac-preserve-native-game-host-icon.patch` lets a native host preserve
+  its compiled macOS Dock icon instead of replacing it with a Windows HICON.
+  Set `BlockintoshPreserveApplicationIcon` to `true` in the host's Info.plist to
+  opt in. Hosts without this key keep the existing Windows icon behavior.
+
+Validation: the x86_64 driver builds with `MACOSX_DEPLOYMENT_TARGET=15.4`.
+A source-derived native probe covers 24 fullscreen mask layouts; a controls/
+presentation probe passes 75 checks on both arm64 and x86_64. Both have failing
+original-code controls. An isolated Wine window verifies native fullscreen entry, the enabled
+Window → Exit Full Screen action, and a simulated game fullscreen on/off cycle.
+The Blockintosh owner subsequently confirmed the fullscreen and icon fixes in
+build 44. These changes do not establish a cause for the separately reported
+7 GB memory spike or complete all Wine fullscreen/platform conformance testing.

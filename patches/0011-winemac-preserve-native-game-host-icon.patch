@@ -1,0 +1,14 @@
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -303,7 +303,10 @@
+             [NSApp setMainMenu:mainMenu];
+             [NSApp setWindowsMenu:submenu];
+ 
+-            [NSApp setApplicationIconImage:self.applicationIcon];
++            /* Native game hosts supply a compiled macOS icon (including
++             * appearance variants). Do not replace it with a square HICON. */
++            if (![[[NSBundle mainBundle] objectForInfoDictionaryKey:@"BlockintoshPreserveApplicationIcon"] boolValue])
++                [NSApp setApplicationIconImage:self.applicationIcon];
+         }
+     }
+ 

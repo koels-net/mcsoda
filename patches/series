@@ -7,3 +7,6 @@
 0006-macos-keep-pthread-gsbase-for-gptk.patch
 0007-server-relative-raw-mouse-for-macdrv.patch
 0008-winemac-nsevent-delta-rawinput.patch
+0009-winemac-fullscreen-mask-local-coordinates.patch
+0010-winemac-fullscreen-controls-and-menu-bar.patch
+0011-winemac-preserve-native-game-host-icon.patch

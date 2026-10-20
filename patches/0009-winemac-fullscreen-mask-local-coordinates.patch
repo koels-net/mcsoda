@@ -1,0 +1,25 @@
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -1639,6 +1639,10 @@
+     if (fullscreen || fullscreen != data->fullscreen)
+     {
+         CGRect rect = (fullscreen && !EqualRect(&data->rects.window, &data->rects.visible)) ? cgrect_from_rect(data->rects.window) : CGRectZero;
++        /* The mask is drawn in content-view coordinates, not desktop coordinates.
++         * Keep the real window/monitor origins intact for input and positioning. */
++        if (!CGRectIsEmpty(rect))
++            rect = CGRectOffset(rect, -data->rects.visible.left, -data->rects.visible.top);
+         macdrv_set_window_mask(data->cocoa_window, rect);
+         data->fullscreen = fullscreen;
+     }
+--- a/dlls/winemac.drv/cocoa_window.m
++++ b/dlls/winemac.drv/cocoa_window.m
+@@ -3682,7 +3682,8 @@
+     WineWindow* window = (WineWindow*)w;
+ 
+     OnMainThread(^{
+-        [window setMask:rect];
++        /* The backend supplies local Wine pixels; the layer uses Cocoa points. */
++        [window setMask:cgrect_mac_from_win(rect)];
+     });
+ }
+ }
